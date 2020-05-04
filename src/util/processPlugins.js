@@ -1,6 +1,8 @@
 import _ from 'lodash'
 import postcss from 'postcss'
+import browserslist from 'browserslist'
 import Node from 'postcss/lib/node'
+import isFunction from 'lodash/isFunction'
 import escapeClassName from '../util/escapeClassName'
 import generateVariantFunction from '../util/generateVariantFunction'
 import parseObjectStyles from '../util/parseObjectStyles'
@@ -26,18 +28,43 @@ export default function(plugins, config) {
     return prefixSelector(config.prefix, selector)
   }
   const getConfigValue = (path, defaultValue) => _.get(config, path, defaultValue)
+  const browserslistTarget = browserslist().includes('ie 11') ? 'ie11' : 'relaxed'
 
   plugins.forEach(plugin => {
-    plugin({
+    if (plugin.__isOptionsFunction) {
+      plugin = plugin()
+    }
+
+    const handler = isFunction(plugin) ? plugin : _.get(plugin, 'handler', () => {})
+
+    handler({
       postcss,
       config: getConfigValue,
       theme: (path, defaultValue) => getConfigValue(`theme.${path}`, defaultValue),
+      corePlugins: path => {
+        if (Array.isArray(config.corePlugins)) {
+          return config.corePlugins.includes(path)
+        }
+
+        return getConfigValue(`corePlugins.${path}`, true)
+      },
       variants: (path, defaultValue) => {
         if (Array.isArray(config.variants)) {
           return config.variants
         }
 
         return getConfigValue(`variants.${path}`, defaultValue)
+      },
+      target: path => {
+        if (_.isString(config.target)) {
+          return config.target === 'browserslist' ? browserslistTarget : config.target
+        }
+
+        const [defaultTarget, targetOverrides] = getConfigValue('target')
+
+        const target = _.get(targetOverrides, path, defaultTarget)
+
+        return target === 'browserslist' ? browserslistTarget : target
       },
       e: escapeClassName,
       prefix: applyConfiguredPrefix,
